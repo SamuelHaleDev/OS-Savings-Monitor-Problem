@@ -2,7 +2,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <unistd.h>
 
+/*MONITOR VARIABLES*/
 pthread_mutex_t mut;
 pthread_cond_t cond;
 
@@ -11,6 +13,7 @@ int numCustIn;
 int numCustWaiting;
 
 bool isSafe() {
+    /*CHECKS TO MAKE SURE ITS SAFE TO STEP INTO A CS*/
     if (numCustIn > 0) {
         return false; // returns false as there is somebody writing currently
     } else return true;
@@ -18,124 +21,90 @@ bool isSafe() {
 
 // Write the withdrawal method
 void *withdraw(void *args) {
+    /*FUNCTIONS VIRTUALLY THE SAME AS WITHDRAW | WHILE THERE ARE NOT ENOUGH FUNDS WAIT FOR THERE TO BE ENOUGH FUNDS*/
     pthread_mutex_lock(&mut);
     float amount = *((float *) args);
     while(!isSafe() || (savingsAmount - amount) < 0) {
+        if ((savingsAmount - amount) < 0) {
+            printf("There are not enough funds to complete this withdraw\n");
+        }
         pthread_cond_wait(&cond, &mut);
     }
     numCustIn += 1;
     savingsAmount -= amount;
     printf("Customer is withdrawing %f new Bank balance %f\n", amount, savingsAmount);
     numCustIn -= 1;
+    pthread_cond_broadcast(&cond);
     pthread_mutex_unlock(&mut);
     sched_yield();
 }
 // Write the deposit method
 void *deposit(void *args) { // args is amount
+    /*GRAB MUTEX | CHECK IF ITS SAFE TO STEP IN | WRITE YOUR SAVINGSAMOUNT CHANGES | HANDLE THE NUMBER OF CUSTOMERS IN VARIABLE | BROADCAST AND UNLOCK MUTEX*/
     pthread_mutex_lock(&mut);
+    while(!isSafe()) {
+        pthread_cond_wait(&cond, &mut);
+    }
+    numCustIn++;
     float amount = *((float *) args);
     savingsAmount += amount; // savingsAmount is a global variable where amount is passed in from input collected in thread entry point
     printf("Customer is depositing %f new Bank balance %f\n", amount, savingsAmount);
+    numCustIn--;
+    pthread_cond_broadcast(&cond);
     pthread_mutex_unlock(&mut);
     sched_yield();
 }
-// Write the thread entry point 
-void *OneCustomer(void *args) {
-    pthread_mutex_lock(&mut);
-    // float amount;
-    // char userInput = 'q';
-    // while (userInput != 'f') {
-    //     printf("Enter d to deposit | Enter w to withdraw | Enter f to exit: ");
-    //     scanf("%c", &userInput); // gets userinput 
-    //     printf("\n");
-    //     if (userInput == 'd') {
-    //         printf("Please enter an amount to deposit into your savings account: ");
-    //         scanf("%f", amount);
-    //         printf("\n");
-    //         pthread_mutex_unlock(&mut);
-    //         deposit(amount);
-    //     } else if (userInput == 'w') {
-    //         printf("please enter an amount to withdraw from your savings account: ");
-    //         scanf("%f", amount);
-    //         printf("\n");
-    //         pthread_mutex_unlock(&mut);
-    //         withdraw(amount);
-    //     } else if (userInput == 'f') {
-    //         printf("Goodbye!\n");
-    //         pthread_mutex_unlock(&mut);
-    //         break;
-    //     }
-    // }
-    pthread_mutex_unlock(&mut);
-    pthread_exit(NULL);
-    // I think you should do random numbers between 1 and 500
-}
-
-
 
 int main() {
+    /*INTIALIZE MUTEX AND CONDITION VARIABLES TO ACHIEVE MONITOR FUNCTIONALITY*/
     pthread_mutex_t mut;
     pthread_mutex_init(&mut, NULL);
     pthread_cond_t cond;
     pthread_cond_init(&cond, NULL);
+    /*INITIALIZE SAVINGS AMOUNT AND NUMCUSTOMERS IN FOR OUR SHARED BANK ACCOUNT AND ISSAFE FUNCTION*/
     savingsAmount = 0;
     numCustIn = 0;
-    numCustWaiting = 0;
-    //pthread_t cust1, cust2, cust3, cust4, cust5, cust6, cust7, cust8, cust9, cust10;
     pthread_t id[50];
-    float amount;
-    char userInput = 'q';
-    int i = 0;
+    float amount = 0; // VARIABLE FOR USERINPUT ON WITHDRAWS AND DEPOSITS
+    char userInput = 'q'; // VARIABLE FOR MENU AND BRANCHING USEAGE
+    int i = 0; // USED TO CREATE OUR THREADS 
+
+    /*MENU*/
+    printf("Enter d to deposit | Enter w to withdraw | Enter f to exit: ");
+    scanf(" %c", &userInput); // gets userinput 
+    printf("\n");
     while (userInput != 'f') {
-        printf("Enter d to deposit | Enter w to withdraw | Enter f to exit: ");
-        scanf("%c", &userInput); // gets userinput 
-        printf("\n");
-        float *arg = (float *)malloc(sizeof(*arg));
-        if (userInput == 'd') {
+        /*ARG WILL BE PASSED TO OUR PTHREAD_CREATE ENTRY POINT FUNCTION*/
+        float *arg = (float *)malloc(sizeof(*arg)); 
+        if (userInput == 'd') { // D FOR DEPOSIT | PROMPTS USER FOR AMOUNT INPUT | CREATES THE THREAD AND CARRIES OUT TRANSACTION | SLEEPS FOR A SECOND SO THE OUTPUT WILL BE FORMATTED NICELY | INCREMENTS I FOR NEXT THREAD CREATION
             printf("Please enter an amount to deposit into your savings account: ");
-            scanf("%f", amount);
+            scanf(" %f.2", &amount);
             printf("\n");
             *arg = amount;
             pthread_create(&id[i], NULL, deposit, arg);
+            sleep(1); // sleep for 1 seconds while new thread does its job
             i++;
-        } else if (userInput == 'w') {
+        } else if (userInput == 'w') { // FUNCTIONS THE SAME AS A DEPOSIT
             printf("please enter an amount to withdraw from your savings account: ");
-            scanf("%f", amount);
+            scanf(" %f.2", &amount);
             printf("\n");
             *arg = amount;
             pthread_create(&id[i], NULL, withdraw, arg);
+            sleep(1);
             i++;
-        } else if (userInput == 'f') {
+        } else if (userInput == 'f') { // EXITS LOOP
             printf("Goodbye!\n");
             break;
         }
+        /*PUT THE PROMPT DOWN HERE IN AN ATTEMPT TO RESOLVE SOME OUTPUT BUGS I HAD*/
+        printf("Enter d to deposit | Enter w to withdraw | Enter f to exit: ");
+        scanf(" %c", &userInput); // gets userinput 
+        printf("\n");
     }
+    /*JOIN ALL THREADS*/
     for (int x = 0; x < i; x++) {
-        pthread_join(&id[x], NULL);
+        pthread_join(id[x], NULL);
     }
-    // Initialize any arguments
-    // Create threads for customers to withdraw or deposit
-    // pthread_create(&cust1, NULL, OneCustomer, NULL);
-    // pthread_create(&cust2, NULL, OneCustomer, NULL);
-    // pthread_create(&cust3, NULL, OneCustomer, NULL);
-    // pthread_create(&cust4, NULL, OneCustomer, NULL);
-    // pthread_create(&cust5, NULL, OneCustomer, NULL);
-    // pthread_create(&cust6, NULL, OneCustomer, NULL);
-    // pthread_create(&cust7, NULL, OneCustomer, NULL);
-    // pthread_create(&cust8, NULL, OneCustomer, NULL);
-    // pthread_create(&cust9, NULL, OneCustomer, NULL);
-    // pthread_create(&cust10, NULL, OneCustomer, NULL);
 
-    // pthread_join(cust1, NULL);
-    // pthread_join(cust2, NULL);
-    // pthread_join(cust3, NULL);
-    // pthread_join(cust4, NULL);
-    // pthread_join(cust5, NULL);
-    // pthread_join(cust6, NULL);
-    // pthread_join(cust7, NULL);
-    // pthread_join(cust8, NULL);
-    // pthread_join(cust9, NULL);
-
-    // Entry point should be a function that will call for customers to deposit a random sum and withdrawal a random sum
     pthread_exit(0);
 }
